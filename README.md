@@ -2,19 +2,15 @@
 
 Image processing API with FastAPI and Celery, deployed on AWS using ECS Fargate, SQS, and S3.
 
-
 ## Live Demo
 
-🌐 **Trying the existing url **: http://image-processor-alb-1146437516.ap-south-1.elb.amazonaws.com
+🌐 **Try the existing demo**: http://image-processor-alb-1146437516.ap-south-1.elb.amazonaws.com
 
 ```bash
 # Quick test
 curl -X POST "http://image-processor-alb-1146437516.ap-south-1.elb.amazonaws.com/upload-image/" -F "file=@your-image.jpg"
 ```
-
-
-
-
+.
 
 ### Step 1: Create AWS IAM User (Security Best Practice)
 
@@ -58,7 +54,7 @@ curl -X POST "http://image-processor-alb-1146437516.ap-south-1.elb.amazonaws.com
    - Click "Next"
    - Add description: "Image Processing CLI Access"
    - Click "Create access key"
-   - **IMPORTANT**: Copy and save both:
+   -  Copy and save both:
      - Access Key ID
      - Secret Access Key
    - Click "Done"
@@ -77,12 +73,6 @@ curl -X POST "http://image-processor-alb-1146437516.ap-south-1.elb.amazonaws.com
    sudo installer -pkg AWSCLIV2.pkg -target /
    ```
 
-   **On Linux:**
-   ```bash
-   curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-   unzip awscliv2.zip
-   sudo ./aws/install
-   ```
 
 2. **Configure AWS CLI:**
    ```bash
@@ -101,13 +91,13 @@ curl -X POST "http://image-processor-alb-1146437516.ap-south-1.elb.amazonaws.com
 
 ### Step 3: Create Required AWS Resources
 
-1. **Create S3 Bucket in terminal  or manually in website:**
+1. **Create S3 Bucket:**
    ```bash
    # Replace 'your-name' with something unique
    aws s3 mb s3://image-processor-your-name-123 --region ap-south-1
    ```
 
-2. **Create SQS Queue in terminal or manually in website:**
+2. **Create SQS Queue:**
    ```bash
    aws sqs create-queue --queue-name image-processor-queue --region ap-south-1
    ```
@@ -165,11 +155,9 @@ curl -X POST "http://image-processor-alb-1146437516.ap-south-1.elb.amazonaws.com
    curl "http://localhost:8000/status/YOUR_TASK_ID"
    ```
 
-## Deployment to AWS
+#
 
-> **Important**: The deployment commands below assume you already have AWS infrastructure set up (ECS Cluster, Load Balancer, Services). If this is your first time, you'll need to create these first.
-
-### Option A: Use Existing Infrastructure (Quick Deploy)
+### Option A: Use Existing Infrastructure with the git clone
 
 If you already have the ECS cluster and services set up:
 
@@ -214,24 +202,13 @@ aws ecs describe-services --cluster image-processor-cluster --services api-servi
 
 ### Option B: Create Full AWS Infrastructure (Complete Setup)
 
-If you need to create everything from scratch, you'll need to set up:
-
-1. **VPC and Networking**
-2. **ECS Cluster** 
-3. **Application Load Balancer**
-4. **ECS Services and Task Definitions**
-
-This requires additional steps. Here's a simplified version:
-
 ### Step 1: Create ECS Cluster
 
 ```bash
 aws ecs create-cluster --cluster-name image-processor-cluster
 ```
 
-### Step 2: Create Load Balancer (Simplified)
-
-> **Note**: This creates a basic setup. For production, you'll want proper VPC, subnets, and security groups.
+### Step 2: Create Load Balancer 
 
 ```bash
 # Get default VPC and subnets
@@ -249,7 +226,7 @@ ALB_ARN=$(aws elbv2 create-load-balancer \
   --security-groups $ALB_SG_ID \
   --query 'LoadBalancers[0].LoadBalancerArn' --output text)
 
-# Get your live URL
+# Get the live URL
 ALB_DNS=$(aws elbv2 describe-load-balancers --load-balancer-arns $ALB_ARN --query 'LoadBalancers[0].DNSName' --output text)
 echo "Your live URL: http://$ALB_DNS"
 ```
@@ -277,13 +254,31 @@ aws elbv2 create-listener \
 
 ### Step 4: Create ECS Task Definitions and Services
 
-This requires creating task definitions (JSON files) and ECS services. It's quite complex, so for beginners, I recommend:
+Creating ECS services requires complex JSON configurations and multiple AWS resources. 
 
-1. **Use AWS Console** to create ECS services through the web interface
-2. **Use infrastructure-as-code tools** like Terraform or CDK
-3. **Follow AWS ECS tutorials** for complete setup
 
-### Get Your Live URL
+
+**Steps:**
+1. Go to [AWS ECS Console](https://console.aws.amazon.com/ecs/)
+2. Click "Clusters" → Select your cluster
+3. Click "Services" tab → "Create"
+4. Follow the wizard:
+   - **Launch type**: Fargate
+   - **Task definition**: Create new one using your ECR image URLs
+   - **Service name**: `api-service`
+   - **Number of tasks**: 1
+   - **Load balancer**: Select the one you created above
+5. Repeat for worker service (without load balancer)
+
+
+**Next steps**
+1. Create your ECS services 
+2. Get the load balancer URL with: 
+   ```bash
+   aws elbv2 describe-load-balancers --query 'LoadBalancers[?LoadBalancerName==`image-processor-alb`].DNSName' --output text
+   ```
+
+### Get the Live URL
 
 After setting up the load balancer:
 
