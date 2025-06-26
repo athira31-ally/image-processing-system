@@ -2,36 +2,21 @@
 
 Image processing API with FastAPI and Celery, deployed on AWS using ECS Fargate, SQS, and S3.
 
-## What This Does
-
-Upload images and get them automatically processed (resized, compressed, format conversion) in the background while you get an immediate response.
-
-## Architecture
-
-```
-FastAPI API ────► Amazon SQS ────► Celery Worker
-(ECS Fargate)    (Message Queue)    (ECS Fargate)
-     │                                   │
-     │                                   │
-     ▼                                   ▼
-   Amazon S3 ◄─────────────────── Image Processing
- (File Storage)
-```
 
 ## Live Demo
 
-http://image-processor-alb-1146437516.ap-south-1.elb.amazonaws.com
+🌐 **Trying the existing url **: http://image-processor-alb-1146437516.ap-south-1.elb.amazonaws.com
 
 ```bash
 # Quick test
 curl -X POST "http://image-processor-alb-1146437516.ap-south-1.elb.amazonaws.com/upload-image/" -F "file=@your-image.jpg"
 ```
 
-## Setup Instructions
 
 
 
-### Step 1: Create AWS IAM User 
+
+### Step 1: Create AWS IAM User (Security Best Practice)
 
 1. **Log in to AWS Console:**
    - Go to [console.aws.amazon.com](https://console.aws.amazon.com)
@@ -92,7 +77,12 @@ curl -X POST "http://image-processor-alb-1146437516.ap-south-1.elb.amazonaws.com
    sudo installer -pkg AWSCLIV2.pkg -target /
    ```
 
-   
+   **On Linux:**
+   ```bash
+   curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+   unzip awscliv2.zip
+   sudo ./aws/install
+   ```
 
 2. **Configure AWS CLI:**
    ```bash
@@ -111,13 +101,13 @@ curl -X POST "http://image-processor-alb-1146437516.ap-south-1.elb.amazonaws.com
 
 ### Step 3: Create Required AWS Resources
 
-1. **Create S3 Bucket in terminal or can create manually:**
+1. **Create S3 Bucket in terminal  or manually in website:**
    ```bash
    # Replace 'your-name' with something unique
    aws s3 mb s3://image-processor-your-name-123 --region ap-south-1
    ```
 
-2. **Create SQS Queue in terminal or can create manually:**
+2. **Create SQS Queue in terminal or manually in website:**
    ```bash
    aws sqs create-queue --queue-name image-processor-queue --region ap-south-1
    ```
@@ -177,6 +167,12 @@ curl -X POST "http://image-processor-alb-1146437516.ap-south-1.elb.amazonaws.com
 
 ## Deployment to AWS
 
+> **Important**: The deployment commands below assume you already have AWS infrastructure set up (ECS Cluster, Load Balancer, Services). If this is your first time, you'll need to create these first.
+
+### Option A: Use Existing Infrastructure (Quick Deploy)
+
+If you already have the ECS cluster and services set up:
+
 ### Step 1: Create Container Repositories
 
 ```bash
@@ -216,8 +212,84 @@ aws ecs update-service --cluster image-processor-cluster --service worker-servic
 aws ecs describe-services --cluster image-processor-cluster --services api-service worker-service --query 'services[*].[serviceName,runningCount,desiredCount]' --output table
 ```
 
+### Option B: Create Full AWS Infrastructure (Complete Setup)
 
+If you need to create everything from scratch, you'll need to set up:
 
+1. **VPC and Networking**
+2. **ECS Cluster** 
+3. **Application Load Balancer**
+4. **ECS Services and Task Definitions**
 
+This requires additional steps. Here's a simplified version:
 
+### Step 1: Create ECS Cluster
+
+```bash
+aws ecs create-cluster --cluster-name image-processor-cluster
+```
+
+### Step 2: Create Load Balancer (Simplified)
+
+> **Note**: This creates a basic setup. For production, you'll want proper VPC, subnets, and security groups.
+
+```bash
+# Get default VPC and subnets
+VPC_ID=$(aws ec2 describe-vpcs --filters "Name=is-default,Values=true" --query 'Vpcs[0].VpcId' --output text)
+SUBNET_IDS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC_ID" --query 'Subnets[*].SubnetId' --output text)
+
+# Create security group for load balancer
+ALB_SG_ID=$(aws ec2 create-security-group --group-name image-processor-alb-sg --description "ALB Security Group" --vpc-id $VPC_ID --query 'GroupId' --output text)
+aws ec2 authorize-security-group-ingress --group-id $ALB_SG_ID --protocol tcp --port 80 --cidr 0.0.0.0/0
+
+# Create load balancer
+ALB_ARN=$(aws elbv2 create-load-balancer \
+  --name image-processor-alb \
+  --subnets $SUBNET_IDS \
+  --security-groups $ALB_SG_ID \
+  --query 'LoadBalancers[0].LoadBalancerArn' --output text)
+
+# Get your live URL
+ALB_DNS=$(aws elbv2 describe-load-balancers --load-balancer-arns $ALB_ARN --query 'LoadBalancers[0].DNSName' --output text)
+echo "Your live URL: http://$ALB_DNS"
+```
+
+### Step 3: Create Target Group and Listener
+
+```bash
+# Create target group
+TG_ARN=$(aws elbv2 create-target-group \
+  --name image-processor-tg \
+  --protocol HTTP \
+  --port 8000 \
+  --vpc-id $VPC_ID \
+  --target-type ip \
+  --health-check-path /health \
+  --query 'TargetGroups[0].TargetGroupArn' --output text)
+
+# Create listener
+aws elbv2 create-listener \
+  --load-balancer-arn $ALB_ARN \
+  --protocol HTTP \
+  --port 80 \
+  --default-actions Type=forward,TargetGroupArn=$TG_ARN
+```
+
+### Step 4: Create ECS Task Definitions and Services
+
+This requires creating task definitions (JSON files) and ECS services. It's quite complex, so for beginners, I recommend:
+
+1. **Use AWS Console** to create ECS services through the web interface
+2. **Use infrastructure-as-code tools** like Terraform or CDK
+3. **Follow AWS ECS tutorials** for complete setup
+
+### Get Your Live URL
+
+After setting up the load balancer:
+
+```bash
+# Get your load balancer URL
+ALB_DNS=$(aws elbv2 describe-load-balancers --query 'LoadBalancers[?LoadBalancerName==`image-processor-alb`].DNSName' --output text)
+echo "Your live URL: http://$ALB_DNS"
+```
 
