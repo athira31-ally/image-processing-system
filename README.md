@@ -137,6 +137,7 @@ aws ecr create-repository --repository-name image-processor-worker --region ap-s
 
 #  Build for AMD64 platform 
 # Get your AWS account ID
+
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
 # Login to AWS container registry
