@@ -4,13 +4,12 @@ Image processing API with FastAPI and Celery, deployed on AWS using ECS Fargate,
 
 ## Live Demo
 
-🌐 **Try the existing demo**: http://image-processor-alb-1146437516.ap-south-1.elb.amazonaws.com
+ http://image-processor-alb-1146437516.ap-south-1.elb.amazonaws.com
 
 ```bash
 # Quick test
 curl -X POST "http://image-processor-alb-1146437516.ap-south-1.elb.amazonaws.com/upload-image/" -F "file=@your-image.jpg"
 ```
-.
 
 ### Step 1: Create AWS IAM User (Security Best Practice)
 
@@ -54,7 +53,7 @@ curl -X POST "http://image-processor-alb-1146437516.ap-south-1.elb.amazonaws.com
    - Click "Next"
    - Add description: "Image Processing CLI Access"
    - Click "Create access key"
-   -  Copy and save both:
+   - **IMPORTANT**: Copy and save both:
      - Access Key ID
      - Secret Access Key
    - Click "Done"
@@ -73,7 +72,6 @@ curl -X POST "http://image-processor-alb-1146437516.ap-south-1.elb.amazonaws.com
    sudo installer -pkg AWSCLIV2.pkg -target /
    ```
 
-
 2. **Configure AWS CLI:**
    ```bash
    aws configure
@@ -91,13 +89,13 @@ curl -X POST "http://image-processor-alb-1146437516.ap-south-1.elb.amazonaws.com
 
 ### Step 3: Create Required AWS Resources
 
-1. **Create S3 Bucket:**
+1. **Create S3 Bucket in terminal or can create manually:**
    ```bash
    # Replace 'your-name' with something unique
    aws s3 mb s3://image-processor-your-name-123 --region ap-south-1
    ```
 
-2. **Create SQS Queue:**
+2. **Create SQS Queue in terminal or can create manually:**
    ```bash
    aws sqs create-queue --queue-name image-processor-queue --region ap-south-1
    ```
@@ -109,7 +107,7 @@ curl -X POST "http://image-processor-alb-1146437516.ap-south-1.elb.amazonaws.com
    echo "Your bucket: image-processor-your-name-123"
    ```
 
-### Step 4: Clone and Setup Application
+### Step 4: Clone and Set Up Application
 
 1. **Clone Repository:**
    ```bash
@@ -155,136 +153,140 @@ curl -X POST "http://image-processor-alb-1146437516.ap-south-1.elb.amazonaws.com
    curl "http://localhost:8000/status/YOUR_TASK_ID"
    ```
 
-#
+## Deployment to AWS
 
-### Option A: Use Existing Infrastructure with the git clone
 
-If you already have the ECS cluster and services set up:
+### Option A: Quick Deploy (If AWS Infrastructure Already Exists)
 
-### Step 1: Create Container Repositories
+1. **Create Container Repositories:**
+   ```bash
+   aws ecr create-repository --repository-name image-processor-api --region ap-south-1
+   aws ecr create-repository --repository-name image-processor-worker --region ap-south-1
+   ```
 
-```bash
-aws ecr create-repository --repository-name image-processor-api --region ap-south-1
-aws ecr create-repository --repository-name image-processor-worker --region ap-south-1
-```
+2. **Build and Push Docker Images:**
+   ```bash
+   # Get your AWS account ID
+   ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
-### Step 2: Build and Push Docker Images
+   # Login to AWS container registry
+   aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin $ACCOUNT_ID.dkr.ecr.ap-south-1.amazonaws.com
 
-```bash
-# Get your AWS account ID
-ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+   # Build for AWS
+   docker build --platform linux/amd64 -t $ACCOUNT_ID.dkr.ecr.ap-south-1.amazonaws.com/image-processor-api:latest .
+   docker build --platform linux/amd64 -f Dockerfile.worker -t $ACCOUNT_ID.dkr.ecr.ap-south-1.amazonaws.com/image-processor-worker:latest .
 
-# Login to AWS container registry
-aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin $ACCOUNT_ID.dkr.ecr.ap-south-1.amazonaws.com
+   # Push to AWS
+   docker push $ACCOUNT_ID.dkr.ecr.ap-south-1.amazonaws.com/image-processor-api:latest
+   docker push $ACCOUNT_ID.dkr.ecr.ap-south-1.amazonaws.com/image-processor-worker:latest
+   ```
 
-# Build for AWS
-docker build --platform linux/amd64 -t $ACCOUNT_ID.dkr.ecr.ap-south-1.amazonaws.com/image-processor-api:latest .
-docker build --platform linux/amd64 -f Dockerfile.worker -t $ACCOUNT_ID.dkr.ecr.ap-south-1.amazonaws.com/image-processor-worker:latest .
+3. **Update ECS Services:**
+   ```bash
+   # Update ECS services (assumes cluster and services already exist)
+   aws ecs update-service --cluster image-processor-cluster --service api-service --force-new-deployment
+   aws ecs update-service --cluster image-processor-cluster --service worker-service --force-new-deployment
+   ```
 
-# Push to AWS
-docker push $ACCOUNT_ID.dkr.ecr.ap-south-1.amazonaws.com/image-processor-api:latest
-docker push $ACCOUNT_ID.dkr.ecr.ap-south-1.amazonaws.com/image-processor-worker:latest
-```
-
-### Step 3: Update ECS Services
-
-```bash
-# Update ECS services (assumes cluster and services already exist)
-aws ecs update-service --cluster image-processor-cluster --service api-service --force-new-deployment
-aws ecs update-service --cluster image-processor-cluster --service worker-service --force-new-deployment
-```
-
-### Step 4: Monitor Deployment
-
-```bash
-aws ecs describe-services --cluster image-processor-cluster --services api-service worker-service --query 'services[*].[serviceName,runningCount,desiredCount]' --output table
-```
+4. **Monitor Deployment:**
+   ```bash
+   aws ecs describe-services --cluster image-processor-cluster --services api-service worker-service --query 'services[*].[serviceName,runningCount,desiredCount]' --output table
+   ```
 
 ### Option B: Create Full AWS Infrastructure (Complete Setup)
 
-### Step 1: Create ECS Cluster
+Everything from Scratch
 
-```bash
-aws ecs create-cluster --cluster-name image-processor-cluster
-```
-
-### Step 2: Create Load Balancer 
-
-```bash
-# Get default VPC and subnets
-VPC_ID=$(aws ec2 describe-vpcs --filters "Name=is-default,Values=true" --query 'Vpcs[0].VpcId' --output text)
-SUBNET_IDS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC_ID" --query 'Subnets[*].SubnetId' --output text)
-
-# Create security group for load balancer
-ALB_SG_ID=$(aws ec2 create-security-group --group-name image-processor-alb-sg --description "ALB Security Group" --vpc-id $VPC_ID --query 'GroupId' --output text)
-aws ec2 authorize-security-group-ingress --group-id $ALB_SG_ID --protocol tcp --port 80 --cidr 0.0.0.0/0
-
-# Create load balancer
-ALB_ARN=$(aws elbv2 create-load-balancer \
-  --name image-processor-alb \
-  --subnets $SUBNET_IDS \
-  --security-groups $ALB_SG_ID \
-  --query 'LoadBalancers[0].LoadBalancerArn' --output text)
-
-# Get the live URL
-ALB_DNS=$(aws elbv2 describe-load-balancers --load-balancer-arns $ALB_ARN --query 'LoadBalancers[0].DNSName' --output text)
-echo "Your live URL: http://$ALB_DNS"
-```
-
-### Step 3: Create Target Group and Listener
-
-```bash
-# Create target group
-TG_ARN=$(aws elbv2 create-target-group \
-  --name image-processor-tg \
-  --protocol HTTP \
-  --port 8000 \
-  --vpc-id $VPC_ID \
-  --target-type ip \
-  --health-check-path /health \
-  --query 'TargetGroups[0].TargetGroupArn' --output text)
-
-# Create listener
-aws elbv2 create-listener \
-  --load-balancer-arn $ALB_ARN \
-  --protocol HTTP \
-  --port 80 \
-  --default-actions Type=forward,TargetGroupArn=$TG_ARN
-```
-
-### Step 4: Create ECS Task Definitions and Services
-
-Creating ECS services requires complex JSON configurations and multiple AWS resources. 
-
-
-
-**Steps:**
-1. Go to [AWS ECS Console](https://console.aws.amazon.com/ecs/)
-2. Click "Clusters" → Select your cluster
-3. Click "Services" tab → "Create"
-4. Follow the wizard:
-   - **Launch type**: Fargate
-   - **Task definition**: Create new one using your ECR image URLs
-   - **Service name**: `api-service`
-   - **Number of tasks**: 1
-   - **Load balancer**: Select the one you created above
-5. Repeat for worker service (without load balancer)
-
-
-**Next steps**
-1. Create your ECS services 
-2. Get the load balancer URL with: 
+1. **Create ECS Cluster:**
    ```bash
-   aws elbv2 describe-load-balancers --query 'LoadBalancers[?LoadBalancerName==`image-processor-alb`].DNSName' --output text
+   aws ecs create-cluster --cluster-name image-processor-cluster
    ```
 
-### Get the Live URL
+2. **Create Load Balancer:**
+   ```bash
+   # Get default VPC and subnets
+   VPC_ID=$(aws ec2 describe-vpcs --filters "Name=is-default,Values=true" --query 'Vpcs[0].VpcId' --output text)
+   SUBNET_IDS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC_ID" --query 'Subnets[*].SubnetId' --output text)
 
-After setting up the load balancer:
+   # Create security group for load balancer
+   ALB_SG_ID=$(aws ec2 create-security-group --group-name image-processor-alb-sg --description "ALB Security Group" --vpc-id $VPC_ID --query 'GroupId' --output text)
+   aws ec2 authorize-security-group-ingress --group-id $ALB_SG_ID --protocol tcp --port 80 --cidr 0.0.0.0/0
+
+   # Create load balancer
+   ALB_ARN=$(aws elbv2 create-load-balancer \
+     --name image-processor-alb \
+     --subnets $SUBNET_IDS \
+     --security-groups $ALB_SG_ID \
+     --query 'LoadBalancers[0].LoadBalancerArn' --output text)
+
+   # Get your live URL
+   ALB_DNS=$(aws elbv2 describe-load-balancers --load-balancer-arns $ALB_ARN --query 'LoadBalancers[0].DNSName' --output text)
+   echo "Your live URL: http://$ALB_DNS"
+   ```
+
+3. **Create Target Group and Listener:**
+   ```bash
+   # Create target group
+   TG_ARN=$(aws elbv2 create-target-group \
+     --name image-processor-tg \
+     --protocol HTTP \
+     --port 8000 \
+     --vpc-id $VPC_ID \
+     --target-type ip \
+     --health-check-path /health \
+     --query 'TargetGroups[0].TargetGroupArn' --output text)
+
+   # Create listener
+   aws elbv2 create-listener \
+     --load-balancer-arn $ALB_ARN \
+     --protocol HTTP \
+     --port 80 \
+     --default-actions Type=forward,TargetGroupArn=$TG_ARN
+   ```
+
+4. **Create ECS Task Definitions and Services:**
+
+   Creating ECS services requires complex JSON configurations and multiple AWS resources.
+
+   **Steps:**
+   1. Go to [AWS ECS Console](https://console.aws.amazon.com/ecs/)
+   2. Click "Clusters" → Select your cluster (`image-processor-cluster`)
+   3. Click "Services" tab → "Create"
+   4. Follow the wizard:
+      - **Launch type**: Fargate
+      - **Task definition**: Create new one using your ECR image URLs
+      - **Service name**: `api-service`
+      - **Number of tasks**: 1
+      - **Load balancer**: Select the one you created above
+      - **Target group**: Select the target group you created
+   5. Repeat for worker service (without load balancer):
+      - **Service name**: `worker-service`
+      - **Number of tasks**: 1
+      - **No load balancer needed**
+
+5. **Get the  Live URL:**
+   ```bash
+   # Get your load balancer URL
+   ALB_DNS=$(aws elbv2 describe-load-balancers --query 'LoadBalancers[?LoadBalancerName==`image-processor-alb`].DNSName' --output text)
+   echo "Your live URL: http://$ALB_DNS"
+   ```
+
+## Testing Your Live Application
+
+Once deployed, testing the live URL:
 
 ```bash
-# Get your load balancer URL
-ALB_DNS=$(aws elbv2 describe-load-balancers --query 'LoadBalancers[?LoadBalancerName==`image-processor-alb`].DNSName' --output text)
-echo "Your live URL: http://$ALB_DNS"
+# Replace with your actual load balancer URL
+YOUR_LIVE_URL="http://your-load-balancer-url"
+
+
+# Upload test image
+curl -o test.jpg "https://picsum.photos/800/600"
+curl -X POST "$YOUR_LIVE_URL/upload-image/" -F "file=@test.jpg"
+
+
 ```
+
+
+
 
