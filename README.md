@@ -103,7 +103,7 @@ CELERY_BROKER_URL=sqs://https://sqs.ap-south-1.amazonaws.com/534211282949/image-
 CELERY_RESULT_BACKEND=s3://image-processor-bucket-534211282949/celery-results/
 
 S3_BUCKET_NAME=your-image-processing-bucket-1750868832
-```
+
 echo "Account ID: $(aws sts get-caller-identity --query Account --output text)"
 echo "SQS URL: $(aws sqs get-queue-url --queue-name image-processor-queue --region ap-south-1 --query QueueUrl --output text)"
 echo "Your bucket: image-processor-your-name-123"
